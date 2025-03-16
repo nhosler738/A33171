@@ -1,10 +1,12 @@
-from socket import *
+import socket
 import os
+import threading
 
-hostname = '0.0.0.0'
-serverPort = 5000
+hostname = ''
+serverPort = 1234
 
-serverSocket = socket()
+serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # allows for reusing the port
 print("Server socket created successfully")
 
 serverSocket.bind((hostname, serverPort))
@@ -61,7 +63,7 @@ def return_file(filename, client_socket):
 
 
     try:
-        html_path = os.path.join("templates", filename)
+        html_path = os.path.join("templates", filename) 
         # if filepath exists: return file
         if(os.path.exists(html_path)):
             with open(html_path, "r") as file:
@@ -70,27 +72,40 @@ def return_file(filename, client_socket):
                     "HTTP/1.1 200 OK\r\n"
                     "Content-Type: text/html\r\n"
                     f"Content-Type: {len(response_body)}\r\n"
-                    "Connection: close\r\n\r\n"
+                    "Connection: keep-alive\r\n\r\n"
                     f"{response_body}"
                 )
         # if filepath doesn't exist: return 404 file
         else:
-            html_path = os.path.join("templates", "404.html")
-            with open(html_path, "r") as file:
+            with open("templates/404.html", "r") as file:
                 response_body = file.read()
                 response = (
                     "HTTP/1.1 404 NOT FOUND\r\n"
                     "Content-Type: text/html\r\n"
                     f"Content-Length: {len(response_body)}\r\n"
-                    "Connection: close\r\n\r\n"
+                    "Connection: keep-alive\r\n\r\n"
                     f"{response_body}"
                 )
 
         # send response to client 
         client_socket.sendall(response.encode('utf-8'))
-    finally:
-        client_socket.close()    
-        
+    except Exception as e:
+        print(f"Error serving file: {e}")  
+
+
+# handles individual client connections
+def handle_client(client_socket):
+    while True:
+        file_requested = parse_http_request(client_socket=client_socket)
+        if not file_requested:
+            break # exit (client disconnected)
+        return_file(filename=file_requested, client_socket=client_socket)
+
+    print("Client disconnected")
+    client_socket.close()
+
+
+
 
 
 # main server loop listening for client connections
@@ -99,8 +114,13 @@ while True:
     client_socket, client_address = serverSocket.accept()
     print("Connection:", client_address)
 
-    file_requested = parse_http_request(client_socket)
-    return_file(filename=file_requested, client_socket=client_socket)
+    # handle each client in a new thread for better scalability
+    threading.Thread(target=handle_client, args=(client_socket,)).start()
+
+
+    
+    
+    
 
 
 
